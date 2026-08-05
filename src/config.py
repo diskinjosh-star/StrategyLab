@@ -1,0 +1,13 @@
+"""
+StrategyLab configuration.
+"""
+
+START_DATE = (2022, 1, 1)
+END_DATE = (2025, 12, 31)
+STARTING_CASH = 100_000
+
+MIN_PRICE = 10.0
+MIN_DOLLAR_VOLUME = 50_000_000
+UNIVERSE_SIZE = 200
+
+UNIVERSE_REFRESH = "monthly"

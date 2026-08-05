@@ -1,45 +1,94 @@
 from AlgorithmImports import *
 
+from config import (
+    END_DATE,
+    MIN_DOLLAR_VOLUME,
+    MIN_PRICE,
+    START_DATE,
+    STARTING_CASH,
+    UNIVERSE_REFRESH,
+    UNIVERSE_SIZE,
+)
+
+
 class StrategyLab(QCAlgorithm):
     """
-    StrategyLab V1
-    First working skeleton.
+    StrategyLab V1: liquid US-equity universe scanner.
+
+    This version intentionally does not trade. It verifies that the
+    point-in-time universe and Interactive Brokers reality model work
+    before we add Anchored VWAP signals and order management.
     """
 
-    def initialize(self):
-        self.set_start_date(2022, 1, 1)
-        self.set_end_date(2025, 12, 31)
-        self.set_cash(100000)
+    def initialize(self) -> None:
+        self.set_start_date(*START_DATE)
+        self.set_end_date(*END_DATE)
+        self.set_cash(STARTING_CASH)
 
         self.set_brokerage_model(
             BrokerageName.INTERACTIVE_BROKERS_BROKERAGE,
-            AccountType.MARGIN
+            AccountType.MARGIN,
         )
 
         self.universe_settings.resolution = Resolution.DAILY
+        self.universe_settings.asynchronous = True
 
-        self.add_universe(self.coarse_selection)
+        if UNIVERSE_REFRESH == "monthly":
+            self.universe_settings.schedule.on(self.date_rules.month_start())
 
-        self.selected = []
+        self._selected_symbols = []
+        self._active_symbols = set()
 
-    def coarse_selection(self, coarse):
-        filtered = [
-            c for c in coarse
-            if c.has_fundamental_data
-            and c.price > 10
-            and c.dollar_volume > 50_000_000
+        self._universe = self.add_universe(self._select_fundamentals)
+
+        self.set_runtime_statistic("Scanner", "Starting")
+        self.debug("StrategyLab V1 initialized.")
+
+    def _select_fundamentals(self, fundamentals):
+        eligible = [
+            item
+            for item in fundamentals
+            if item.has_fundamental_data
+            and item.price >= MIN_PRICE
+            and item.dollar_volume >= MIN_DOLLAR_VOLUME
         ]
 
-        filtered = sorted(
-            filtered,
-            key=lambda x: x.dollar_volume,
-            reverse=True
+        ranked = sorted(
+            eligible,
+            key=lambda item: item.dollar_volume,
+            reverse=True,
         )
 
-        self.selected = [x.symbol for x in filtered[:200]]
-        return self.selected
+        self._selected_symbols = [
+            item.symbol for item in ranked[:UNIVERSE_SIZE]
+        ]
 
-    def on_data(self, data: Slice):
-        # V1 only scans and builds the investable universe.
-        # Trading logic will be added in the next module.
+        self.set_runtime_statistic(
+            "Scanner",
+            f"{len(self._selected_symbols)} selected",
+        )
+
+        return self._selected_symbols
+
+    def on_securities_changed(self, changes: SecurityChanges) -> None:
+        for security in changes.added_securities:
+            self._active_symbols.add(security.symbol)
+
+        for security in changes.removed_securities:
+            self._active_symbols.discard(security.symbol)
+
+        self.set_runtime_statistic(
+            "Active Universe",
+            str(len(self._active_symbols)),
+        )
+
+        if changes.added_securities or changes.removed_securities:
+            self.debug(
+                f"{self.time.date()}: "
+                f"added={len(changes.added_securities)}, "
+                f"removed={len(changes.removed_securities)}, "
+                f"active={len(self._active_symbols)}"
+            )
+
+    def on_data(self, data: Slice) -> None:
         pass
